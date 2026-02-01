@@ -21,6 +21,7 @@ from modules.commission.ui.commission_list_page import CommissionListPage
 from modules.clients.ui.clients_list_page import ClientsListPage
 from modules.partners.ui.partners_list_page import PartnersListPage
 from modules.expenses.ui.expenses_list_page import ExpensesListPage
+from modules.team.ui.team_list_page import TeamListPage  # NEW: Team module
 
 # Import services
 from modules.deals.services.deal_service import DealService
@@ -36,6 +37,8 @@ from modules.partners.services.partner_service import PartnerService
 from modules.partners.repositories.partner_repository import PartnerRepository
 from modules.expenses.services.expense_service import ExpenseService
 from modules.expenses.repositories.expense_repository import ExpenseRepository
+from modules.team.services.team_service import TeamMemberService  # NEW: Team service
+from modules.team.repositories.team_repository import TeamMemberRepository  # NEW: Team repository
 
 
 class MainWindow(QMainWindow):
@@ -54,6 +57,8 @@ class MainWindow(QMainWindow):
     def setup_services(self):
         """Initialize all services and repositories."""
         # Get database session for repositories that need it
+        session = db_manager.get_session()
+        
         # Initialize repositories
         # Some repos use self-managed sessions, others use injected session
         self.deal_repo = DealRepository()  # Self-managed
@@ -62,6 +67,7 @@ class MainWindow(QMainWindow):
         self.client_repo = ClientRepository()
         self.partner_repo = PartnerRepository()
         self.expense_repo = ExpenseRepository()
+        self.team_repo = TeamMemberRepository(session)  # NEW: Team repository
         
         # Initialize services
         self.deal_service = DealService(self.deal_repo)
@@ -70,6 +76,7 @@ class MainWindow(QMainWindow):
         self.client_service = ClientService(self.client_repo)
         self.partner_service = PartnerService(self.partner_repo)
         self.expense_service = ExpenseService(self.expense_repo)
+        self.team_service = TeamMemberService(session)  # NEW: Team service
         
         # Initialize dashboard service with other services
         self.dashboard_service = DashboardService(
@@ -163,8 +170,8 @@ class MainWindow(QMainWindow):
         # Clients
         self.add_nav_button(layout, "👥 Clients", 4)
         
-        # Partners
-        self.add_nav_button(layout, "🤝 Partners", 5)
+        # Team (REPLACED Partners)
+        self.add_nav_button(layout, "👤 Team", 5)
         
         # Expenses
         self.add_nav_button(layout, "💸 Expenses", 6)
@@ -236,9 +243,9 @@ class MainWindow(QMainWindow):
         self.clients_page = ClientsListPage(self.client_service)
         self.stacked_widget.addWidget(self.clients_page)
         
-        # Partners page (index 5)
-        self.partners_page = PartnersListPage(self.partner_service)
-        self.stacked_widget.addWidget(self.partners_page)
+        # Team page (index 5) - REPLACED Partners
+        self.team_page = TeamListPage(self.team_service)
+        self.stacked_widget.addWidget(self.team_page)
         
         # Expenses page (index 6)
         self.expenses_page = ExpensesListPage(self.expense_service)
