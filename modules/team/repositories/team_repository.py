@@ -8,11 +8,46 @@ from core.models import TeamMember, TeamMemberNote
 from core.base_repository import BaseRepository
 
 
-class TeamMemberRepository(BaseRepository[TeamMember]):
+class TeamMemberRepository:
     """Repository for team member CRUD operations"""
     
     def __init__(self, session: Session):
-        super().__init__(session, TeamMember)
+        self.session = session
+    
+    def create(self, team_member: TeamMember) -> TeamMember:
+        """Create a new team member"""
+        self.session.add(team_member)
+        self.session.commit()
+        self.session.refresh(team_member)
+        return team_member
+    
+    def get_by_id(self, member_id: int) -> Optional[TeamMember]:
+        """Get team member by ID"""
+        return self.session.query(TeamMember).filter(TeamMember.id == member_id).first()
+    
+    def get_all(self) -> List[TeamMember]:
+        """Get all team members"""
+        return self.session.query(TeamMember).all()
+    
+    def update(self, member_id: int, data: dict) -> Optional[TeamMember]:
+        """Update a team member"""
+        member = self.get_by_id(member_id)
+        if member:
+            for key, value in data.items():
+                if hasattr(member, key):
+                    setattr(member, key, value)
+            self.session.commit()
+            self.session.refresh(member)
+        return member
+    
+    def delete(self, member_id: int) -> bool:
+        """Delete a team member"""
+        member = self.get_by_id(member_id)
+        if member:
+            self.session.delete(member)
+            self.session.commit()
+            return True
+        return False
     
     def get_by_type(self, member_type: str) -> List[TeamMember]:
         """Get all team members of a specific type"""
@@ -51,11 +86,18 @@ class TeamMemberRepository(BaseRepository[TeamMember]):
             self.session.commit()
 
 
-class TeamMemberNoteRepository(BaseRepository[TeamMemberNote]):
+class TeamMemberNoteRepository:
     """Repository for team member notes"""
     
     def __init__(self, session: Session):
-        super().__init__(session, TeamMemberNote)
+        self.session = session
+    
+    def create(self, note: TeamMemberNote) -> TeamMemberNote:
+        """Create a new note"""
+        self.session.add(note)
+        self.session.commit()
+        self.session.refresh(note)
+        return note
     
     def get_by_team_member(self, team_member_id: int) -> List[TeamMemberNote]:
         """Get all notes for a team member"""
@@ -69,3 +111,4 @@ class TeamMemberNoteRepository(BaseRepository[TeamMemberNote]):
             TeamMemberNote.team_member_id == team_member_id,
             TeamMemberNote.note_type == note_type
         ).order_by(TeamMemberNote.created_at.desc()).all()
+
