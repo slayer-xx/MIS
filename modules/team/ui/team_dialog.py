@@ -193,6 +193,9 @@ class TeamMemberDialog(QDialog):
         self.revenue_share_label = QLabel("Revenue Share %:")
         form.addRow(self.revenue_share_label, self.revenue_share_input)
         
+        # Initialize field visibility based on default member type
+        self.on_member_type_changed(self.member_type_input.currentText())
+        
         widget.setLayout(form)
         return widget
     
