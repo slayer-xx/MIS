@@ -1,14 +1,14 @@
 """
-Database Migration Script - V2 Commission Restructure
-======================================================
+Database Migration Script - V2 Commission Restructure (COMPREHENSIVE)
+=====================================================================
 
 This script migrates the database from V1 to V2 structure:
 
 1. Creates new tables: team_members, business_partners, and their notes
-2. Updates commission_structures and commission_payments with new schema
+2. RECREATES commission_structures table with new V2 schema
 3. Migrates existing Partner data to appropriate new tables
 4. Adds new fields to deals table
-5. Preserves all existing data
+5. Backs up existing commission data before restructuring
 
 IMPORTANT: This script backs up the database before migration.
 """
@@ -30,6 +30,7 @@ except (ImportError, AttributeError):
     HAS_PARTNER_MODEL = False
     print("Note: Partner model not found in core.models - will skip partner migration")
 
+
 def backup_database():
     """Create a backup of the current database"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -49,6 +50,53 @@ def check_existing_tables(engine):
     return existing_tables
 
 
+def backup_commission_data(session):
+    """Backup existing commission data to temporary table"""
+    print("\n=== Backing Up Existing Commission Data ===")
+    
+    try:
+        # Check if commission_structures table exists and has data
+        result = session.execute(text("SELECT COUNT(*) FROM commission_structures")).fetchone()
+        count = result[0] if result else 0
+        
+        if count > 0:
+            print(f"Found {count} commission records to backup")
+            
+            # Create backup table
+            session.execute(text("""
+                CREATE TABLE IF NOT EXISTS commission_structures_backup AS 
+                SELECT * FROM commission_structures
+            """))
+            session.commit()
+            print("✓ Commission data backed up to commission_structures_backup table")
+        else:
+            print("No commission data to backup")
+            
+    except Exception as e:
+        print(f"Note: Could not backup commission data: {e}")
+        print("This is OK if table doesn't exist yet")
+
+
+def recreate_commission_structures_table(engine):
+    """Drop and recreate commission_structures table with new V2 schema"""
+    print("\n=== Recreating Commission Structures Table ===")
+    
+    with engine.connect() as conn:
+        try:
+            # Drop existing table
+            conn.execute(text("DROP TABLE IF EXISTS commission_structures"))
+            conn.commit()
+            print("✓ Dropped old commission_structures table")
+            
+            # Create new table with V2 schema
+            Base.metadata.tables['commission_structures'].create(engine)
+            print("✓ Created new commission_structures table with V2 schema")
+            
+        except Exception as e:
+            print(f"Error recreating table: {e}")
+            raise
+
+
 def create_new_tables(engine):
     """Create only the new V2 tables"""
     print("\n=== Creating New V2 Tables ===")
@@ -56,14 +104,14 @@ def create_new_tables(engine):
     # Get list of existing tables
     existing_tables = check_existing_tables(engine)
     
-    # Tables we want to create
+    # Tables we want to create (excluding commission_structures which we handle separately)
     new_tables = ['team_members', 'team_member_notes', 'business_partners', 'business_partner_notes']
     
-    # Create only new tables
-    Base.metadata.create_all(engine, tables=[
-        Base.metadata.tables[table] for table in new_tables 
-        if table in Base.metadata.tables and table not in existing_tables
-    ])
+    # Create only new tables that don't exist
+    for table_name in new_tables:
+        if table_name not in existing_tables and table_name in Base.metadata.tables:
+            Base.metadata.tables[table_name].create(engine)
+            print(f"✓ Created table: {table_name}")
     
     print("✓ New tables created successfully")
 
@@ -90,7 +138,7 @@ def migrate_partners_to_team_and_business(session):
         
         print(f"Found {partner_count} partners to migrate")
         
-        # Fetch partners using raw SQL since we might not have the model
+        # Fetch partners using raw SQL
         partners_data = session.execute(text("""
             SELECT id, name, partner_type, company_name, phone, email, alternate_phone,
                    address, city, default_commission_split, rera_number, gst_number, 
@@ -111,27 +159,25 @@ def migrate_partners_to_team_and_business(session):
             
             if partner[14]:  # created_at
                 if isinstance(partner[14], str):
-                    from datetime import datetime as dt
                     try:
-                        created_at = dt.strptime(partner[14], '%Y-%m-%d %H:%M:%S')
+                        created_at = datetime.strptime(partner[14], '%Y-%m-%d %H:%M:%S')
                     except:
                         try:
-                            created_at = dt.strptime(partner[14], '%Y-%m-%d %H:%M:%S.%f')
+                            created_at = datetime.strptime(partner[14], '%Y-%m-%d %H:%M:%S.%f')
                         except:
-                            created_at = dt.now()
+                            created_at = datetime.now()
                 else:
                     created_at = partner[14]
             
             if partner[15]:  # updated_at
                 if isinstance(partner[15], str):
-                    from datetime import datetime as dt
                     try:
-                        updated_at = dt.strptime(partner[15], '%Y-%m-%d %H:%M:%S')
+                        updated_at = datetime.strptime(partner[15], '%Y-%m-%d %H:%M:%S')
                     except:
                         try:
-                            updated_at = dt.strptime(partner[15], '%Y-%m-%d %H:%M:%S.%f')
+                            updated_at = datetime.strptime(partner[15], '%Y-%m-%d %H:%M:%S.%f')
                         except:
-                            updated_at = dt.now()
+                            updated_at = datetime.now()
                 else:
                     updated_at = partner[15]
             
@@ -251,14 +297,13 @@ def verify_migration(session):
     print("\n=== Verifying Migration ===")
     
     # Count records in new tables
-    team_count = session.query(TeamMember).count()
-    business_count = session.query(BusinessPartner).count()
+    team_count = session.execute(text("SELECT COUNT(*) FROM team_members")).fetchone()[0]
+    business_count = session.execute(text("SELECT COUNT(*) FROM business_partners")).fetchone()[0]
     
     print(f"Team Members: {team_count}")
     print(f"Business Partners: {business_count}")
     
     # Check if new columns exist in deals
-    from sqlalchemy import inspect
     inspector = inspect(session.bind)
     deal_columns = [col['name'] for col in inspector.get_columns('deals')]
     
@@ -269,22 +314,31 @@ def verify_migration(session):
         else:
             print(f"✗ Deal column '{col}' missing")
     
+    # Check commission_structures table
+    commission_columns = [col['name'] for col in inspector.get_columns('commission_structures')]
+    if 'commission_source' in commission_columns:
+        print("✓ Commission structures table updated to V2 schema")
+    else:
+        print("✗ Commission structures table NOT updated")
+    
     print("\n✓ Migration verification complete")
 
 
 def main():
     """Main migration function"""
     print("=" * 70)
-    print("DATABASE MIGRATION - V2 COMMISSION RESTRUCTURE")
+    print("DATABASE MIGRATION - V2 COMMISSION RESTRUCTURE (COMPREHENSIVE)")
     print("=" * 70)
     
     # Confirm with user
     print("\nThis migration will:")
     print("1. Create a backup of your current database")
     print("2. Create new tables for Team and Business Partners")
-    print("3. Migrate existing Partner data to appropriate tables")
-    print("4. Add new columns to Deals table")
-    print("5. Keep all existing data intact")
+    print("3. RECREATE commission_structures table with V2 schema")
+    print("4. Migrate existing Partner data to appropriate tables")
+    print("5. Add new columns to Deals table")
+    print("\n⚠️  WARNING: Existing commission data will be backed up but will need")
+    print("   to be manually migrated to the new structure later.")
     
     response = input("\nProceed with migration? (yes/no): ").strip().lower()
     if response != 'yes':
@@ -301,16 +355,22 @@ def main():
         Session = sessionmaker(bind=engine)
         session = Session()
         
-        # Step 3: Create new tables
+        # Step 3: Backup existing commission data
+        backup_commission_data(session)
+        
+        # Step 4: Recreate commission_structures table
+        recreate_commission_structures_table(engine)
+        
+        # Step 5: Create new tables
         create_new_tables(engine)
         
-        # Step 4: Add columns to deals table
+        # Step 6: Add columns to deals table
         add_columns_to_deals(engine)
         
-        # Step 5: Migrate partner data
+        # Step 7: Migrate partner data
         migrate_partners_to_team_and_business(session)
         
-        # Step 6: Verify migration
+        # Step 8: Verify migration
         verify_migration(session)
         
         # Close session
@@ -321,9 +381,10 @@ def main():
         print("=" * 70)
         print(f"\nBackup saved at: {backup_path}")
         print("\nNext steps:")
-        print("1. Test the application with new Team and Business Partners modules")
+        print("1. Test the application: python main.py")
         print("2. Verify all data migrated correctly")
-        print("3. Once confirmed, the old Partners module can be removed")
+        print("3. Old commission data is in commission_structures_backup table")
+        print("4. You can now use the new Team and Business Partners modules")
         
     except Exception as e:
         print(f"\n✗ MIGRATION FAILED: {e}")
