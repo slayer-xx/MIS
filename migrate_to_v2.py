@@ -105,6 +105,36 @@ def migrate_partners_to_team_and_business(session):
             # Determine where this partner should go
             partner_type = partner[2].lower() if partner[2] else ''
             
+            # Convert string datetimes to datetime objects
+            created_at = None
+            updated_at = None
+            
+            if partner[14]:  # created_at
+                if isinstance(partner[14], str):
+                    from datetime import datetime as dt
+                    try:
+                        created_at = dt.strptime(partner[14], '%Y-%m-%d %H:%M:%S')
+                    except:
+                        try:
+                            created_at = dt.strptime(partner[14], '%Y-%m-%d %H:%M:%S.%f')
+                        except:
+                            created_at = dt.now()
+                else:
+                    created_at = partner[14]
+            
+            if partner[15]:  # updated_at
+                if isinstance(partner[15], str):
+                    from datetime import datetime as dt
+                    try:
+                        updated_at = dt.strptime(partner[15], '%Y-%m-%d %H:%M:%S')
+                    except:
+                        try:
+                            updated_at = dt.strptime(partner[15], '%Y-%m-%d %H:%M:%S.%f')
+                        except:
+                            updated_at = dt.now()
+                else:
+                    updated_at = partner[15]
+            
             if partner_type == 'broker' or 'broker' in partner_type:
                 # Migrate to TeamMember as revenue_partner
                 team_member = TeamMember(
@@ -119,8 +149,8 @@ def migrate_partners_to_team_and_business(session):
                     revenue_share_percentage=partner[9],
                     pan_number=partner[12],
                     notes=f"Migrated from Partners module. Original type: {partner[2]}",
-                    created_at=partner[14],
-                    updated_at=partner[15]
+                    created_at=created_at,
+                    updated_at=updated_at
                 )
                 session.add(team_member)
                 team_count += 1
@@ -143,8 +173,8 @@ def migrate_partners_to_team_and_business(session):
                     pan_number=partner[12],
                     status='active' if partner[13] == 'active' else 'inactive',
                     notes=f"Migrated from Partners module. Original type: {partner[2]}",
-                    created_at=partner[14],
-                    updated_at=partner[15]
+                    created_at=created_at,
+                    updated_at=updated_at
                 )
                 session.add(business_partner)
                 business_count += 1
@@ -167,8 +197,8 @@ def migrate_partners_to_team_and_business(session):
                     pan_number=partner[12],
                     status='active' if partner[13] == 'active' else 'inactive',
                     notes=f"Migrated from Partners module. Original type: {partner[2]}",
-                    created_at=partner[14],
-                    updated_at=partner[15]
+                    created_at=created_at,
+                    updated_at=updated_at
                 )
                 session.add(business_partner)
                 business_count += 1
